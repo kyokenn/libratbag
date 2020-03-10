@@ -33,23 +33,14 @@
 #include "libratbag-private.h"
 #include "libratbag-hidraw.h"
 
-#define ROG_PUGIO_BUTTON_MAX			10
 #define ROG_PUGIO_NUM_PROFILE			3
 #define ROG_PUGIO_NUM_DPI			2
+#define ROG_PUGIO_NUM_BUTTON			10
 #define ROG_PUGIO_NUM_LED			3
-
-#define ROG_PUGIO_REPORT_SIZE_PROFILE		64
-#define ROG_PUGIO_REPORT_SIZE_SETTINGS		64
-#define ROG_PUGIO_REPORT_SIZE_SPEED_SETTING	64
-#define ROG_PUGIO_REPORT_SIZE_MACRO		0
-
-#define ETEKCITY_CONFIG_SETTINGS		0x10
-#define ETEKCITY_CONFIG_KEY_MAPPING		0x20
-
-#define ETEKCITY_MAX_MACRO_LENGTH		50
 
 struct rog_pugio_profile {
     uint8_t profile_id;
+    uint8_t is_active;
     uint8_t dpi[ROG_PUGIO_NUM_DPI];  /* DPI presets */
     uint8_t rate;  /* polling rate */
     uint8_t response;  /* button response in ms */
@@ -60,163 +51,6 @@ struct rog_pugio_profile {
 struct rog_pugio_data {
     struct rog_pugio_profile profiles[ROG_PUGIO_NUM_PROFILE];
 };
-
-static char *
-print_key(uint8_t key)
-{
-	switch (key) {
-	case 1: return "BTN_LEFT";
-	case 2: return "BTN_RIGHT";
-	case 3: return "BTN_MIDDLE";
-	case 4: return "2 x BTN_LEFT";
-	case 7: return "BTN_EXTRA";
-	case 6: return "NONE";
-	case 8: return "BTN_SIDE";
-	case 9: return "REL_WHEEL 1";
-	case 10: return "REL_WHEEL -1";
-	case 11: return "REL_HWHEEL -1";
-	case 12: return "REL_HWHEEL 1";
-
-	/* DPI switch */
-	case 13: return "DPI cycle";
-	case 14: return "DPI++";
-	case 15: return "DPI--";
-
-	case 16: return "Macro";
-
-	/* Profile */
-	case 18: return "profile cycle";
-	case 19: return "profile++";
-	case 20: return "profile--";
-
-	case 21: return "HOLD BTN_LEFT ON/OFF";
-
-	/* multimedia */
-	case 25: return "KEY_CONFIG";
-	case 26: return "KEY_PREVIOUSSONG";
-	case 27: return "KEY_NEXTSONG";
-	case 28: return "KEY_PLAYPAUSE";
-	case 29: return "KEY_STOPCD";
-	case 30: return "KEY_MUTE";
-	case 31: return "KEY_VOLUMEUP";
-	case 32: return "KEY_VOLUMEDOWN";
-
-	/* windows */
-	case 33: return "KEY_CALC";
-	case 34: return "KEY_MAIL";
-	case 35: return "KEY_BOOKMARKS";
-	case 36: return "KEY_FORWARD";
-	case 37: return "KEY_BACK";
-	case 38: return "KEY_STOP";
-	case 39: return "KEY_FILE";
-	case 40: return "KEY_REFRESH";
-	case 41: return "KEY_HOMEPAGE";
-	case 42: return "KEY_SEARCH";
-	}
-
-	return "UNKNOWN";
-}
-
-struct etekcity_button_type_mapping {
-	uint8_t raw;
-	enum ratbag_button_type type;
-};
-
-static const struct rog_button_type_mapping rog_button_type_mapping[] = {
-	{ 0, RATBAG_BUTTON_TYPE_LEFT },
-	{ 1, RATBAG_BUTTON_TYPE_RIGHT },
-	{ 2, RATBAG_BUTTON_TYPE_MIDDLE },
-	{ 3, RATBAG_BUTTON_TYPE_WHEEL_UP },
-	{ 4, RATBAG_BUTTON_TYPE_WHEEL_DOWN },
-	{ 5, RATBAG_BUTTON_TYPE_RESOLUTION_CYCLE_UP },
-	{ 6, RATBAG_BUTTON_TYPE_BACKWARD },
-	{ 7, RATBAG_BUTTON_TYPE_FORWARD },
-	{ 8, RATBAG_BUTTON_TYPE_PINKIE },
-	{ 9, RATBAG_BUTTON_TYPE_PINKIE2 },
-};
-
-static enum ratbag_button_type
-etekcity_raw_to_button_type(uint8_t data)
-{
-	const struct etekcity_button_type_mapping *mapping;
-
-	ARRAY_FOR_EACH(etekcity_button_type_mapping, mapping) {
-		if (mapping->raw == data)
-			return mapping->type;
-	}
-
-	return RATBAG_BUTTON_TYPE_UNKNOWN;
-}
-
-struct etekcity_button_mapping {
-	uint8_t raw;
-	struct ratbag_button_action action;
-};
-
-static struct rog_pugio_button_mapping rog_pugio_button_mapping[] = {
-	{ 1, BUTTON_ACTION_BUTTON(1) },
-	{ 2, BUTTON_ACTION_BUTTON(2) },
-	{ 3, BUTTON_ACTION_BUTTON(3) },
-	{ 4, BUTTON_ACTION_SPECIAL(RATBAG_BUTTON_ACTION_SPECIAL_DOUBLECLICK) },
-	{ 6, BUTTON_ACTION_NONE },
-	{ 7, BUTTON_ACTION_BUTTON(4) },
-	{ 8, BUTTON_ACTION_BUTTON(5) },
-	{ 9, BUTTON_ACTION_SPECIAL(RATBAG_BUTTON_ACTION_SPECIAL_WHEEL_UP) },
-	{ 10, BUTTON_ACTION_SPECIAL(RATBAG_BUTTON_ACTION_SPECIAL_WHEEL_DOWN) },
-	{ 11, BUTTON_ACTION_SPECIAL(RATBAG_BUTTON_ACTION_SPECIAL_WHEEL_LEFT) },
-	{ 12, BUTTON_ACTION_SPECIAL(RATBAG_BUTTON_ACTION_SPECIAL_WHEEL_RIGHT) },
-	{ 13, BUTTON_ACTION_SPECIAL(RATBAG_BUTTON_ACTION_SPECIAL_RESOLUTION_CYCLE_UP) },
-	{ 14, BUTTON_ACTION_SPECIAL(RATBAG_BUTTON_ACTION_SPECIAL_RESOLUTION_UP) },
-	{ 15, BUTTON_ACTION_SPECIAL(RATBAG_BUTTON_ACTION_SPECIAL_RESOLUTION_DOWN) },
-	{ 16, BUTTON_ACTION_MACRO },
-	{ 18, BUTTON_ACTION_SPECIAL(RATBAG_BUTTON_ACTION_SPECIAL_PROFILE_CYCLE_UP) },
-	{ 19, BUTTON_ACTION_SPECIAL(RATBAG_BUTTON_ACTION_SPECIAL_PROFILE_UP) },
-	{ 20, BUTTON_ACTION_SPECIAL(RATBAG_BUTTON_ACTION_SPECIAL_PROFILE_DOWN) },
-	{ 25, BUTTON_ACTION_KEY(KEY_CONFIG) },
-	{ 26, BUTTON_ACTION_KEY(KEY_PREVIOUSSONG) },
-	{ 27, BUTTON_ACTION_KEY(KEY_NEXTSONG) },
-	{ 28, BUTTON_ACTION_KEY(KEY_PLAYPAUSE) },
-	{ 29, BUTTON_ACTION_KEY(KEY_STOPCD) },
-	{ 30, BUTTON_ACTION_KEY(KEY_MUTE) },
-	{ 31, BUTTON_ACTION_KEY(KEY_VOLUMEUP) },
-	{ 32, BUTTON_ACTION_KEY(KEY_VOLUMEDOWN) },
-	{ 33, BUTTON_ACTION_KEY(KEY_CALC) },
-	{ 34, BUTTON_ACTION_KEY(KEY_MAIL) },
-	{ 35, BUTTON_ACTION_KEY(KEY_BOOKMARKS) },
-	{ 36, BUTTON_ACTION_KEY(KEY_FORWARD) },
-	{ 37, BUTTON_ACTION_KEY(KEY_BACK) },
-	{ 38, BUTTON_ACTION_KEY(KEY_STOP) },
-	{ 39, BUTTON_ACTION_KEY(KEY_FILE) },
-	{ 40, BUTTON_ACTION_KEY(KEY_REFRESH) },
-	{ 41, BUTTON_ACTION_KEY(KEY_HOMEPAGE) },
-	{ 42, BUTTON_ACTION_KEY(KEY_SEARCH) },
-};
-
-static const struct ratbag_button_action*
-etekcity_raw_to_button_action(uint8_t data)
-{
-	struct etekcity_button_mapping *mapping;
-
-	ARRAY_FOR_EACH(etekcity_button_mapping, mapping) {
-		if (mapping->raw == data)
-			return &mapping->action;
-	}
-
-	return NULL;
-}
-
-static uint8_t
-etekcity_button_action_to_raw(const struct ratbag_button_action *action)
-{
-	struct etekcity_button_mapping *mapping;
-
-	ARRAY_FOR_EACH(etekcity_button_mapping, mapping) {
-		if (ratbag_button_action_match(&mapping->action, action))
-			return mapping->raw;
-	}
-
-	return 0;
-}
 
 static int
 rog_pugio_get_current_profile(struct ratbag_device *device)
@@ -265,432 +99,87 @@ rog_pugio_set_current_profile(struct ratbag_device *device, unsigned int index)
 }
 
 static int
-etekcity_set_config_profile(struct ratbag_device *device, uint8_t profile, uint8_t type)
+rog_pugio_probe(struct ratbag_device *device)
 {
-	uint8_t buf[] = {ETEKCITY_REPORT_ID_CONFIGURE_PROFILE, profile, type};
-	int ret;
+    struct ratbag_profile *profile;
+    struct rog_pugio_data *drv_data;
+    int ret;
 
-	if (profile > ETEKCITY_PROFILE_MAX)
-		return -EINVAL;
+    ret = ratbag_open_hidraw(device);
+    if (ret) {
+        return rc;
+    }
 
-	ret = ratbag_hidraw_raw_request(device, buf[0], buf, sizeof(buf),
-				 HID_FEATURE_REPORT, HID_REQ_SET_REPORT);
+    drv_data = zalloc(sizeof(*drv_data));
+    ratbag_set_drv_data(device, drv_data);
 
-	msleep(100);
+    ratbag_device_init_profiles(device,
+                                ROG_PUGIO_NUM_PROFILE,
+                                ROG_PUGIO_NUM_DPI,
+                                ROG_PUGIO_NUM_BUTTON,
+                                ROG_PUGIO_NUM_LED);
 
-	return ret == sizeof(buf) ? 0 : ret;
-}
+    int profile_id = rog_pugio_get_current_profile(device);
+    if (profile_id < 0) {
+        log_error(device->ratbag,
+                  "Can't talk to the mouse: '%s' (%d)\n",
+                  strerror(-active_idx),
+                  active_idx);
+        ret = -ENODEV;
+        goto err;
+    }
 
-static inline unsigned
-etekcity_button_to_index(unsigned button)
-{
-	return button < 8 ? button : button + 5;
-}
-
-static const struct ratbag_button_action *
-etekcity_button_to_action(struct ratbag_profile *profile,
-			  unsigned int button_index)
-{
-	struct ratbag_device *device = profile->device;
-	struct etekcity_data *drv_data = ratbag_get_drv_data(device);
-	uint8_t data;
-	unsigned raw_index = etekcity_button_to_index(button_index);
-
-	data = drv_data->profiles[profile->index][3 + raw_index * 3];
-	log_raw(device->ratbag,
-		  " - button%d: %s (%02x) %s:%d\n",
-		  button_index, print_key(data), data, __FILE__, __LINE__);
-	return etekcity_raw_to_button_action(data);
-}
-
-static int
-etekcity_write_profile(struct ratbag_profile *profile)
-{
-	struct ratbag_device *device = profile->device;
-	unsigned int index = profile->index;
-	struct etekcity_data *drv_data;
-	int rc;
-	uint8_t *buf;
-
-	assert(index <= ETEKCITY_PROFILE_MAX);
-
-	drv_data = ratbag_get_drv_data(device);
-	buf = drv_data->profiles[index];
-
-	etekcity_set_config_profile(device, index, ETEKCITY_CONFIG_KEY_MAPPING);
-	rc = ratbag_hidraw_raw_request(device, ETEKCITY_REPORT_ID_KEY_MAPPING,
-			buf, ETEKCITY_REPORT_SIZE_PROFILE,
-			HID_FEATURE_REPORT, HID_REQ_SET_REPORT);
-
-	msleep(100);
-
-	if (rc < ETEKCITY_REPORT_SIZE_PROFILE)
-		return -EIO;
-
-	log_raw(device->ratbag, "profile: %d written %s:%d\n",
-		buf[2],
-		__FILE__, __LINE__);
-	return 0;
-}
-
-static void
-etekcity_read_button(struct ratbag_button *button)
-{
-	const struct ratbag_button_action *action;
-	struct ratbag_device *device;
-	struct ratbag_button_macro *m;
-	struct etekcity_macro *macro;
-	struct etekcity_data *drv_data;
-	uint8_t *buf;
-	unsigned j;
-	int rc;
-
-	action = etekcity_button_to_action(button->profile, button->index);
-	if (action)
-		ratbag_button_set_action(button, action);
-	button->type = etekcity_raw_to_button_type(button->index);
-
-	ratbag_button_enable_action_type(button, RATBAG_BUTTON_ACTION_TYPE_BUTTON);
-	ratbag_button_enable_action_type(button, RATBAG_BUTTON_ACTION_TYPE_KEY);
-	ratbag_button_enable_action_type(button, RATBAG_BUTTON_ACTION_TYPE_SPECIAL);
-	ratbag_button_enable_action_type(button, RATBAG_BUTTON_ACTION_TYPE_MACRO);
-
-	if (action && action->type == RATBAG_BUTTON_ACTION_TYPE_MACRO) {
-		device = button->profile->device;
-		drv_data = ratbag_get_drv_data(device);
-
-		etekcity_set_config_profile(device,
-					    button->profile->index,
-					    button->index);
-		macro = &drv_data->macros[button->profile->index][button->index];
-		buf = (uint8_t*)macro;
-		rc = ratbag_hidraw_raw_request(device, ETEKCITY_REPORT_ID_MACRO,
-				buf, ETEKCITY_REPORT_SIZE_MACRO,
-				HID_FEATURE_REPORT, HID_REQ_GET_REPORT);
-		if (rc != ETEKCITY_REPORT_SIZE_MACRO) {
-			log_error(device->ratbag,
-				  "Unable to retrieve the macro for button %d of profile %d: %s (%d)\n",
-				  button->index, button->profile->index,
-				  rc < 0 ? strerror(-rc) : "not read enough", rc);
-		} else {
-			m = ratbag_button_macro_new(macro->name);
-			log_raw(device->ratbag,
-				"macro on button %d of profile %d is named '%s', and contains %d events:\n",
-				button->index, button->profile->index,
-				macro->name, macro->length);
-			for (j = 0; j < macro->length; j++) {
-				unsigned int keycode = ratbag_hidraw_get_keycode_from_keyboard_usage(device,
-								macro->keys[j].keycode);
-				ratbag_button_macro_set_event(m,
-							      j,
-							      macro->keys[j].flag & 0x80 ? RATBAG_MACRO_EVENT_KEY_RELEASED : RATBAG_MACRO_EVENT_KEY_PRESSED,
-							      keycode);
-				log_raw(device->ratbag,
-					"    - %s %s\n",
-					libevdev_event_code_get_name(EV_KEY, keycode),
-					macro->keys[j].flag & 0x80 ? "released" : "pressed");
-			}
-			ratbag_button_copy_macro(button, m);
-			ratbag_button_macro_unref(m);
-		}
-		msleep(10);
-	}
-}
-
-static void
-etekcity_read_profile(struct ratbag_profile *profile)
-{
-	struct ratbag_device *device = profile->device;
-	struct etekcity_data *drv_data;
-	struct ratbag_resolution *resolution;
-	struct ratbag_button *button;
-	struct etekcity_settings_report *setting_report;
-	uint8_t *buf;
-	unsigned int report_rate;
-	int dpi_x, dpi_y;
-	int rc;
-	unsigned int report_rates[] = { 125, 250, 500, 1000 };
-
-	assert(profile->index <= ETEKCITY_PROFILE_MAX);
-
-	drv_data = ratbag_get_drv_data(device);
-
-	setting_report = &drv_data->settings[profile->index];
-	buf = (uint8_t*)setting_report;
-	etekcity_set_config_profile(device, profile->index, ETEKCITY_CONFIG_SETTINGS);
-	rc = ratbag_hidraw_raw_request(device, ETEKCITY_REPORT_ID_SETTINGS,
-			buf, ETEKCITY_REPORT_SIZE_SETTINGS,
-			HID_FEATURE_REPORT, HID_REQ_GET_REPORT);
-
-	if (rc < ETEKCITY_REPORT_SIZE_SETTINGS)
-		return;
-
-	/* first retrieve the report rate, it is set per profile */
-	if (setting_report->report_rate < ARRAY_LENGTH(report_rates)) {
-		report_rate = report_rates[setting_report->report_rate];
-	} else {
-		log_error(device->ratbag,
-			  "error while reading the report rate of the mouse (0x%02x)\n",
-			  buf[26]);
-		report_rate = 0;
+    for (int i = 0; i < ROG_PUGIO_NUM_PROFILE; i++) {
+        int ret = rog_pugio_set_current_profile(i);
+	if (ret < 0) {
+            log_error(device->ratbag,
+                      "Can't talk to the mouse: '%s' (%d)\n",
+                      strerror(-active_idx),
+                      active_idx);
+            ret = -ENODEV;
+            goto err;
 	}
 
-	ratbag_profile_set_report_rate_list(profile, report_rates,
-					    ARRAY_LENGTH(report_rates));
-	ratbag_profile_set_report_rate(profile, report_rate);
+        profile = zalloc(sizeof(*profile));
+        profile->profile_id = i;
+        if (i == profile_id) {
+            profile->is_active = 1;
+        } else {
+            profile->is_active = 0;
+        }
+        drv_data->profiles[i] = profile;
+    }
 
-	ratbag_profile_for_each_resolution(profile, resolution) {
-		dpi_x = setting_report->xres[resolution->index] * 50;
-		dpi_y = setting_report->yres[resolution->index] * 50;
-		if (!(setting_report->dpi_mask & (1 << resolution->index))) {
-			/* the profile is disabled, overwrite it */
-			dpi_x = 0;
-			dpi_y = 0;
-		}
+    int ret = rog_pugio_set_current_profile(profile_id);
+    if (ret < 0) {
+        log_error(device->ratbag,
+                  "Can't talk to the mouse: '%s' (%d)\n",
+                  strerror(-active_idx),
+                  active_idx);
+        ret = -ENODEV;
+        goto err;
+    }
 
-		ratbag_resolution_set_resolution(resolution, dpi_x, dpi_y);
-		ratbag_resolution_set_cap(resolution,
-					  RATBAG_RESOLUTION_CAP_SEPARATE_XY_RESOLUTION);
-		resolution->is_active = (resolution->index == setting_report->current_dpi);
-
-	}
-
-	ratbag_profile_for_each_button(profile, button)
-		etekcity_read_button(button);
-
-	buf = drv_data->profiles[profile->index];
-	etekcity_set_config_profile(device, profile->index, ETEKCITY_CONFIG_KEY_MAPPING);
-	rc = ratbag_hidraw_raw_request(device, ETEKCITY_REPORT_ID_KEY_MAPPING,
-			buf, ETEKCITY_REPORT_SIZE_PROFILE,
-			HID_FEATURE_REPORT, HID_REQ_GET_REPORT);
-
-	msleep(10);
-
-	if (rc < ETEKCITY_REPORT_SIZE_PROFILE)
-		return;
-
-	log_raw(device->ratbag, "profile: %d %s:%d\n",
-		buf[2],
-		__FILE__, __LINE__);
-}
-
-static int
-etekcity_write_macro(struct ratbag_button *button,
-		     const struct ratbag_button_action *action)
-{
-	struct ratbag_device *device;
-	struct etekcity_macro *macro;
-	struct etekcity_data *drv_data;
-	uint8_t *buf;
-	unsigned i, count = 0;
-	int rc;
-
-	if (action->type != RATBAG_BUTTON_ACTION_TYPE_MACRO)
-		return 0;
-
-	device = button->profile->device;
-	drv_data = ratbag_get_drv_data(device);
-	macro = &drv_data->macros[button->profile->index][button->index];
-	buf = (uint8_t*)macro;
-
-	for (i = 0; i < MAX_MACRO_EVENTS && count < ETEKCITY_MAX_MACRO_LENGTH; i++) {
-		if (action->macro->events[i].type == RATBAG_MACRO_EVENT_INVALID)
-			return -EINVAL; /* should not happen, ever */
-
-		if (action->macro->events[i].type == RATBAG_MACRO_EVENT_NONE)
-			break;
-
-		/* ignore timeout events */
-		if (action->macro->events[i].type == RATBAG_MACRO_EVENT_WAIT)
-			continue;
-
-		macro->keys[count].keycode = ratbag_hidraw_get_keyboard_usage_from_keycode(device,
-											   action->macro->events[i].event.key);
-		if (action->macro->events[i].type == RATBAG_MACRO_EVENT_KEY_PRESSED)
-			macro->keys[count].flag = 0x00;
-		else
-			macro->keys[count].flag = 0x80;
-		count++;
-	}
-
-	macro->reportID = ETEKCITY_REPORT_ID_MACRO;
-	macro->heightytwo = 0x82;
-	macro->profile = button->profile->index;
-	macro->button_index = button->index;
-	macro->active = 0x01;
-	strncpy(macro->name, action->macro->name, 23);
-	macro->length = count;
-
-	etekcity_set_config_profile(device,
-				    button->profile->index,
-				    button->index);
-	rc = ratbag_hidraw_raw_request(device, ETEKCITY_REPORT_ID_MACRO,
-		buf, ETEKCITY_REPORT_SIZE_MACRO,
-		HID_FEATURE_REPORT, HID_REQ_SET_REPORT);
-	if (rc < 0)
-		return rc;
-
-	return rc == ETEKCITY_REPORT_SIZE_MACRO ? 0 : -EIO;
-}
-
-static int
-etekcity_write_button(struct ratbag_button *button,
-		      const struct ratbag_button_action *action)
-{
-	struct ratbag_profile *profile = button->profile;
-	struct ratbag_device *device = profile->device;
-	struct etekcity_data *drv_data = ratbag_get_drv_data(device);
-	uint8_t rc, *data;
-	unsigned index = etekcity_button_to_index(button->index);
-
-	data = &drv_data->profiles[profile->index][3 + index * 3];
-
-	rc = etekcity_button_action_to_raw(action);
-	if (!rc)
-		return -EINVAL;
-
-	*data = rc;
-
-	rc = etekcity_write_profile(button->profile);
-	if (rc) {
-		log_error(device->ratbag,
-			  "unable to write the profile to the device: '%s' (%d)\n",
-			  strerror(-rc), rc);
-		return rc;
-	}
-
-	rc = etekcity_write_macro(button, action);
-	if (rc) {
-		log_error(device->ratbag,
-			  "unable to write the macro to the device: '%s' (%d)\n",
-			  strerror(-rc), rc);
-		return rc;
-	}
-
-	return rc;
-}
-
-static int
-etekcity_write_resolution_dpi(struct ratbag_resolution *resolution,
-			      int dpi_x, int dpi_y)
-{
-	struct ratbag_profile *profile = resolution->profile;
-	struct ratbag_device *device = profile->device;
-	struct etekcity_data *drv_data = ratbag_get_drv_data(device);
-	struct etekcity_settings_report *settings_report;
-	uint8_t *buf;
-	int rc;
-
-	if (dpi_x < 50 || dpi_x > 8200 || dpi_x % 50)
-		return -EINVAL;
-	if (dpi_y < 50 || dpi_y > 8200 || dpi_y % 50)
-		return -EINVAL;
-
-	settings_report = &drv_data->settings[profile->index];
-
-	settings_report->x_sensitivity = 0x0a;
-	settings_report->y_sensitivity = 0x0a;
-	settings_report->xres[resolution->index] = dpi_x / 50;
-	settings_report->yres[resolution->index] = dpi_y / 50;
-
-	buf = (uint8_t*)settings_report;
-	etekcity_set_config_profile(device, profile->index, ETEKCITY_CONFIG_SETTINGS);
-	rc = ratbag_hidraw_raw_request(device, ETEKCITY_REPORT_ID_SETTINGS,
-				       buf, ETEKCITY_REPORT_SIZE_SETTINGS,
-				       HID_FEATURE_REPORT, HID_REQ_SET_REPORT);
-
-	if (rc < 0)
-		return rc;
-
-	if (rc != ETEKCITY_REPORT_SIZE_SETTINGS)
-		return -EIO;
-
-	return 0;
-}
-
-static int
-etekcity_probe(struct ratbag_device *device)
-{
-	int rc;
-	struct ratbag_profile *profile;
-	struct etekcity_data *drv_data;
-	int active_idx;
-
-	rc = ratbag_open_hidraw(device);
-	if (rc)
-		return rc;
-
-	if (!ratbag_hidraw_has_report(device, ETEKCITY_REPORT_ID_KEY_MAPPING)) {
-		ratbag_close_hidraw(device);
-		return -ENODEV;
-	}
-
-	drv_data = zalloc(sizeof(*drv_data));
-	ratbag_set_drv_data(device, drv_data);
-
-	/* retrieve the "on-to-go" speed setting */
-	rc = ratbag_hidraw_raw_request(device, ETEKCITY_REPORT_ID_SPEED_SETTING,
-			drv_data->speed_setting, ETEKCITY_REPORT_SIZE_SPEED_SETTING,
-			HID_FEATURE_REPORT, HID_REQ_GET_REPORT);
-	if (rc)
-		return rc;
-
-	log_debug(device->ratbag, "device is at %d ms of latency\n", drv_data->speed_setting[2]);
-
-	/* profiles are 0-indexed */
-	ratbag_device_init_profiles(device,
-				    ETEKCITY_PROFILE_MAX + 1,
-				    ETEKCITY_NUM_DPI,
-				    ETEKCITY_BUTTON_MAX + 1,
-				    ETEKCITY_LED);
-
-	ratbag_device_for_each_profile(device, profile)
-		etekcity_read_profile(profile);
-
-	active_idx = etekcity_current_profile(device);
-	if (active_idx < 0) {
-		log_error(device->ratbag,
-			  "Can't talk to the mouse: '%s' (%d)\n",
-			  strerror(-active_idx),
-			  active_idx);
-		rc = -ENODEV;
-		goto err;
-	}
-
-	list_for_each(profile, &device->profiles, link) {
-		if (profile->index == (unsigned int)active_idx) {
-			profile->is_active = true;
-			break;
-		}
-	}
-
-	log_raw(device->ratbag,
-		"'%s' is in profile %d\n",
-		ratbag_device_get_name(device),
-		profile->index);
-
-	return 0;
+    return 0;
 
 err:
-	free(drv_data);
-	ratbag_set_drv_data(device, NULL);
-	return rc;
+    free(drv_data);
+    ratbag_set_drv_data(device, NULL);
+    return ret;
 }
 
 static void
-etekcity_remove(struct ratbag_device *device)
+rog_pugio_remove(struct ratbag_device *device)
 {
-	ratbag_close_hidraw(device);
-	free(ratbag_get_drv_data(device));
+    ratbag_close_hidraw(device);
+    free(ratbag_get_drv_data(device));
 }
 
 struct ratbag_driver rog_pugio_driver = {
-	.name = "ASUS ROG Pugio",
-	.id = "rog_pugio",
-	.probe = etekcity_probe,
-	.remove = etekcity_remove,
-	.write_profile = rog_pugio_write_profile,
-	.set_active_profile = rog_pugio_set_current_profile,
-	.write_button = etekcity_write_button,
-	.write_resolution_dpi = etekcity_write_resolution_dpi,
+    .name = "ASUS ROG Pugio",
+    .id = "rog_pugio",
+    .probe = rog_pugio_probe,
+    .remove = rog_pugio_remove,
+    .write_profile = rog_pugio_write_profile,
+    .set_active_profile = rog_pugio_set_current_profile,
 };
